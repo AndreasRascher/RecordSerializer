@@ -2,3 +2,5 @@
 .vscode/rad.json
 .vscode/.alcache/*.json
 src/test.xml
+.vscode/.altemplates/*
+*.app
