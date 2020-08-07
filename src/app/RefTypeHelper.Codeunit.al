@@ -15,7 +15,6 @@ codeunit 50001 RefTypeHelper
         GUIDType: Guid;
         IntegerType: Integer;
         OStream: OutStream;
-        TextType: Text;
         TimeType: Time;
     begin
         CASE FldRef.TYPE OF
@@ -116,9 +115,7 @@ codeunit 50001 RefTypeHelper
                     IsEmpty := not BooleanType;
                 end;
             'BigInteger', 'Integer', 'Decimal':
-                begin
-                    IsEmpty := Format(FldRef.Value) = '0';
-                end;
+                IsEmpty := Format(FldRef.Value) = '0';
             'Time':
                 begin
                     TimeType := FldRef.Value;
@@ -133,9 +130,7 @@ codeunit 50001 RefTypeHelper
             'Code',
             'DateFormula',
             'DateTime':
-                begin
-                    IsEmpty := Format(FldRef.Value) = '';
-                end;
+                IsEmpty := Format(FldRef.Value) = '';
             'GUID', 'Guid':
                 begin
                     GuidType := FldRef.Value;
@@ -143,13 +138,11 @@ codeunit 50001 RefTypeHelper
                 end;
             'Blob':
                 begin
-                    FldRef.CalcField;
+                    FldRef.CalcField();
                     IsEmpty := (Format(FldRef.Value) = '0');
                 end;
             'Media', 'MediaSet':
-                begin
-                    IsEmpty := IsNullGuid(Format(FldRef.Value));
-                end;
+                IsEmpty := IsNullGuid(Format(FldRef.Value));
             'Option':
                 begin
                     IntegerType := FldRef.Value;
@@ -167,9 +160,6 @@ codeunit 50001 RefTypeHelper
     end;
 
     procedure FldRefValueText(var FldRef: FieldRef; var ValueText: Text) OK: Boolean;
-    var
-        Base64String: Text;
-        Base64Convert: Codeunit Base64Convert;
     begin
         OK := true;
         CASE Format(FldRef.Type) OF
@@ -178,9 +168,7 @@ codeunit 50001 RefTypeHelper
             'Media':
                 OK := GetMediaFieldAsText(FldRef, true, ValueText);
             'MediaSet':
-                begin
-                    Error('Not Implemented');
-                end;
+                Error('not Implemented');
             'BigInteger',
             'Boolean',
             'Code',
@@ -204,10 +192,8 @@ codeunit 50001 RefTypeHelper
 
     procedure GetMediaFieldAsText(var FldRef: FieldRef; Base64Encode: Boolean; var MediaContentAsText: Text) OK: Boolean
     var
-        Base64Convert: Codeunit Base64Convert;
-        PicInStream: InStream;
         TenantMedia: Record "Tenant Media";
-        FileName: Text;
+        Base64Convert: Codeunit Base64Convert;
         MediaID: Guid;
         IStream: InStream;
     begin
@@ -234,8 +220,8 @@ codeunit 50001 RefTypeHelper
     procedure GetBlobFieldAsText(var FldRef: FieldRef; Base64Encode: Boolean; var BlobContentAsText: Text) OK: Boolean
     var
         TenantMedia: Record "Tenant Media";
-        IStream: InStream;
         Base64Convert: Codeunit Base64Convert;
+        IStream: InStream;
     begin
         OK := true;
         TenantMedia.Content := FldRef.Value;
@@ -248,25 +234,11 @@ codeunit 50001 RefTypeHelper
             IStream.ReadText(BlobContentAsText);
     end;
 
-    procedure BlobToBase64String(FldRef: FieldRef; var Base64String: Text)
-    var
-        Base64Convert: Codeunit Base64Convert;
-        TenantMedia: Record "Tenant Media" temporary;
-        IStream: InStream;
-    begin
-        TenantMedia.Content := FldRef.Value;
-        TenantMedia.Content.CreateInStream(IStream);
-        Base64String := Base64Convert.StreamToBase64String(IStream);
-    end;
-
     procedure VariantToRecordRef(RecordVariant: Variant; var RecRef: RecordRef)
     begin
         Clear(RecRef);
-        IF NOT RecordVariant.ISRECORD AND
-           NOT RecordVariant.ISRECORDID AND
-           NOT RecordVariant.ISRECORDREF
-        THEN
-            ERROR('ParameterNotValidErr');
+        if not (RecordVariant.ISRECORD or RecordVariant.ISRECORDID or RecordVariant.ISRECORDREF) then
+            Error('ParameterNotValidErr');
 
         Case True of
             RecordVariant.ISRECORD:

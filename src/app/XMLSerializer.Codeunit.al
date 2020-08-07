@@ -28,14 +28,13 @@ codeunit 50200 XmlSerializer
     procedure RecRefToXMLNode(var RecRef: RecordRef) RecordNode: XmlNode;
     var
         Fldref: FieldRef;
-        Base64String: Text;
         FieldNode: XMLNode;
         ExportField: Dictionary of [Text, Text];
         ExportFields: List of [Dictionary of [Text, Text]];
         FieldID: Integer;
         FieldPropKey: Text;
     begin
-        RecordNode := XmlElement.Create('Record', '').AsXmlNode;
+        RecordNode := XmlElement.Create('Record', '').AsXmlNode();
         AddAttribute(RecordNode, 'ID', ReplaceInvalidXMLCharacters(Format(RecRef.RecordId)));
         CreateListOfExportFields(RecRef, ExportFields);
         foreach ExportField in ExportFields do begin
@@ -43,12 +42,11 @@ codeunit 50200 XmlSerializer
             Evaluate(FieldID, ExportField.Get('ID'));
             FldRef := RecRef.Field(FieldID);
             if not RefTypeHelper.IsEmptyFldRef(Fldref) then begin
-                FieldNode := XmlElement.Create('Field').AsXmlNode;
-                foreach FieldPropKey in ExportField.Keys do begin
+                FieldNode := XmlElement.Create('Field').AsXmlNode();
+                foreach FieldPropKey in ExportField.Keys do
                     AddAttribute(FieldNode, FieldPropKey, ExportField.Get(FieldPropKey));
-                end;
-                FieldNode.AsXmlElement.Add(RefTypeHelper.GetFldRefValueText(Fldref));
-                RecordNode.AsXmlElement.Add(FieldNode);
+                FieldNode.AsXmlElement().Add(RefTypeHelper.GetFldRefValueText(Fldref));
+                RecordNode.AsXmlElement().Add(FieldNode);
             end;  //end_case
         end; //end_for
     end;
@@ -81,6 +79,8 @@ codeunit 50200 XmlSerializer
         if not RecRef.FindSet() then
             exit;
         XRecordSet := XMLElement.Create('RecordSet').AsXmlNode();
+        AddAttribute(XRecordSet, 'TableID', ReplaceInvalidXMLCharacters(format(RecRef.Number)));
+        AddAttribute(XRecordSet, 'TableName', ReplaceInvalidXMLCharacters(format(RecRef.Name)));
         repeat
             XRecord := RecRefToXMLNode(RecRef);
             XRecordSet.AsXmlElement().Add(XRecord);
@@ -93,51 +93,41 @@ codeunit 50200 XmlSerializer
     var
         XMLDoc: XmlDocument;
         XRecord: XmlNode;
-        XList: XmlNodeList;
-        XField: XmlNode;
-        FieldValueAsText: Text;
-        FldRef: FieldRef;
     begin
-        Clear(RecRef);
-        RecRef.Open(TableID);
         XmlDocument.ReadFrom(XMLContent, XMLDoc);
         XMLDoc.SelectSingleNode('//Record', XRecord);
-        XRecord.SelectNodes('//Field', XList);
-        foreach XField in XList do begin
-            FieldValueAsText := XField.AsXmlElement().InnerXml;
-            FldRef := RecRef.Field(GetFieldIDFromFieldNode(XField));
-            RefTypeHelper.EvaluateFldRef(FieldValueAsText, FldRef);
-        end;
+        XRecordNodeToRecordRef(XRecord, TableID, RecRef);
     end;
     //#endregion DeserializeFromXML XML->Record
 
     //#region DeserializeFromXML XML->RecordSet
-    procedure XMLToRecordSet(XMLContent: Text; TableID: Integer; var TmpRecRef: RecordRef);
+    procedure XMLRecordSet_GetRecordCount(XMLContent: Text) RecordCount: Integer;
+    var
+        XMLDoc: XmlDocument;
+        XRecordSet: XmlNode;
+        XRecordList: XmlNodeList;
+    begin
+        XmlDocument.ReadFrom(XMLContent, XMLDoc);
+        XMLDoc.SelectSingleNode('//RecordSet', XRecordSet);
+        XRecordSet.SelectNodes('//Record', XRecordList);
+        RecordCount := XRecordList.Count;
+    end;
+
+    procedure XMLRecordSet_GetRecordAtIndex(XMLContent: Text; Index: Integer; var ResultRecRef: RecordRef) OK: Boolean
     var
         XMLDoc: XmlDocument;
         XRecord: XmlNode;
-        XRecords: XmlNode;
-        XRecordList: XmlNodeList;
-        XList: XmlNodeList;
-        XFields: XmlNodeList;
-        XField: XmlNode;
-        FieldValueAsText: Text;
-        FldRef: FieldRef;
+        XRecordSet: XmlNode;
+        TableID: Integer;
     begin
-        Clear(TmpRecRef);
-        TmpRecRef.Open(TableID, true);
+        OK := true;
+        Clear(ResultRecRef);
         XmlDocument.ReadFrom(XMLContent, XMLDoc);
-        XMLDoc.SelectSingleNode('//RecordSet', XRecords);
-        XRecords.SelectNodes('//Record', XRecordList);
-        foreach XRecord in XRecordList do begin
-            XRecord.SelectNodes('//Field', XFields);
-            foreach XField in XFields do begin
-                FieldValueAsText := XField.AsXmlElement().InnerXml;
-                FldRef := TmpRecRef.Field(GetFieldIDFromFieldNode(XField));
-                RefTypeHelper.EvaluateFldRef(FieldValueAsText, FldRef);
-            end;
-            TmpRecRef.Insert();
-        end;
+        XMLDoc.SelectSingleNode('//RecordSet', XRecordSet);
+        if not XRecordSet.SelectSingleNode(StrSubstNo('//Record[%1]', Index), XRecord) then
+            exit(false);
+        TableID := TryFindTableID(XRecordSet);
+        XRecordNodeToRecordRef(XRecord, TableID, ResultRecRef);
     end;
     //#endregion DeserializeFromXML XML->RecordSet
     local procedure ReplaceInvalidXMLCharacters(OriginalText: Text) ReplacedText: Text
@@ -162,7 +152,7 @@ codeunit 50200 XmlSerializer
     begin
         if not XNode.IsXmlElement then
             exit(false);
-        XNode.AsXmlElement.SetAttribute(AttrName, AttrValue);
+        XNode.AsXmlElement().SetAttribute(AttrName, AttrValue);
     end;
 
     procedure GetAttributeValue(XNode: XmlNode; AttrName: Text): Text
@@ -175,9 +165,9 @@ codeunit 50200 XmlSerializer
 
     local procedure CreateListOfExportFields(var RecRef: RecordRef; var FieldIDs: List of [Dictionary of [Text, Text]])
     var
-        FldIndex: Integer;
         FldRef: FieldRef;
         FieldProps: Dictionary of [Text, Text];
+        FldIndex: Integer;
     begin
         for FldIndex := 1 to RecRef.FieldCount do begin
             FldRef := RecRef.FieldIndex(FldIndex);
@@ -190,30 +180,6 @@ codeunit 50200 XmlSerializer
         end;
     end;
 
-    // procedure TableViewToXML(RecVariant: Variant; TableView: text) XMLDoc: XmlDocument;
-    // var
-    //     RecRef: RecordRef;
-    //     Records: XmlNode;
-    //     RecordNode: XmlNode;
-    //     RootNode: XmlNode;
-    // begin
-    //     VariantToRecordRef(RecVariant, RecRef);
-    //     RootNode := XmlElement.Create('Root').AsXmlNode();
-    //     XMLDoc.Add(RootNode);
-
-    //     RecRef.SetView(TableView);
-    //     If not RecRef.findset then
-    //         exit;
-    //     AddRecordDefinition(RootNode, RecRef);
-    //     Records := RootNode;
-    //     AddGroupNode(Records, 'Records');
-    //     repeat
-    //         RecordNode := RecRefToXML(RecRef);
-    //         Records.AsXmlElement.Add(RecordNode);
-    //     until RecRef.next = 0;
-    //     ShowXMLContentInMessage;
-    // end;
-
     local procedure GetFieldIDFromFieldNode(XField: XmlNode) FieldID: Integer
     var
         FieldName: Text;
@@ -222,17 +188,53 @@ codeunit 50200 XmlSerializer
         FieldName := GetAttributeValue(XField, 'Name');
     end;
 
-    procedure AddFieldDefinitionXML(RecRef: RecordRef) XFieldDefinition: XmlNode
+    local procedure XRecordNodeToRecordRef(XRecord: XmlNode; TableID: Integer; var RecRef: RecordRef)
     var
         FldRef: FieldRef;
+        ChildNodeCount: Integer;
+        FieldValueAsText: Text;
         XField: XmlNode;
+        XList: XmlNodeList;
+    begin
+        XRecord.SelectNodes('child::*', XList); // select all element children
+        ChildNodeCount := XList.Count;
+        Clear(RecRef);
+        RecRef.Open(TableID);
+        foreach XField in XList do begin
+            FieldValueAsText := XField.AsXmlElement().InnerXml;
+            FldRef := RecRef.Field(GetFieldIDFromFieldNode(XField));
+            RefTypeHelper.EvaluateFldRef(FieldValueAsText, FldRef);
+        end;
+    end;
+
+    local procedure TryFindTableID(XRecordSet: XmlNode) TableID: Integer;
+    var
+        TableMetadata: Record "Table Metadata";
+        TableName: Text;
+    begin
+        // FirstTry ByName
+        TableName := GetAttributeValue(XRecordSet, 'TableName');
+        if TableName <> '' then begin
+            TableMetadata.SetFilter(Name, '@%1', TableName);
+            if TableMetadata.FindFirst() then
+                exit(TableMetadata.ID);
+        end;
+        // SecondTry TableID
+        if Evaluate(TableID, GetAttributeValue(XRecordSet, 'TableID')) then
+            exit(TableID);
+    end;
+
+    procedure AddFieldDefinitionXML(RecRef: RecordRef) XFieldDefinition: XmlNode
+    var
         RecRef_Init: RecordRef;
+        FldRef: FieldRef;
+        FieldID: Dictionary of [Text, Text];
         ID: Integer;
         FieldIDs: List of [Dictionary of [Text, Text]];
-        FieldID: Dictionary of [Text, Text];
+        XField: XmlNode;
     begin
         RecRef_Init.Open(RecRef.Number);
-        RecRef_Init.Init;
+        RecRef_Init.Init();
         XFieldDefinition := XmlElement.Create('FieldDefinition').AsXmlNode();
         CreateListOfExportFields(RecRef, FieldIDs);
         foreach FieldID in FieldIDs do begin
@@ -262,66 +264,6 @@ codeunit 50200 XmlSerializer
         end;
     end;
 
-    //     procedure AddGroupNode(var _XMLNode: XmlNode; _NodeName: Text)
-    //     var
-    //         _XMLNewChild: XmlNode;
-    //     begin
-    //         AddElement(_XMLNode, _NodeName, '', _XMLNewChild);
-    //         _XMLNode := _XMLNewChild;
-    //     end;
-
-    //     procedure AddNode(var pXMLNode: XmlNode; pNodeName: Text; pNodeText: Text)
-    //     var
-    //         lXMLNewChild: XmlNode;
-    //     begin
-    //         AddElement(pXMLNode, pNodeName, pNodeText, lXMLNewChild);
-    //     end;
-
-    //     procedure AddRecordDefinition(var ParentNode: XmlNode; RecRef: RecordRef)
-    //     var
-    //         RecordDefinition: XmlNode;
-    //     begin
-    //         AddElement(ParentNode, 'RecordDefinition', '', RecordDefinition);
-    //         AddNode(RecordDefinition, 'Number', FORMAT(RecRef.NUMBER));
-    //         AddNode(RecordDefinition, 'Name', RecRef.NAME);
-    //         AddNode(RecordDefinition, 'Caption', RecRef.Caption);
-    //         AddNode(RecordDefinition, 'CurrentCompany', RecRef.CurrentCompany);
-    //         AddFieldDefinitionXML(RecordDefinition, RecRef);
-    //     end;
-
-
-
-
-    //     procedure IsExportField(var FldRef: FieldRef) IsAvailableForExport: Boolean
-    //     begin
-    //         case true of
-    //             (FldRef.Class <> FldRef.Class::Normal):
-    //                 exit(false);
-    //             (not FldRef.Active):
-    //                 exit(false);
-    //             else
-    //                 exit(true);
-    //         end;
-    //     end;
-
-
-
-
-    //     procedure ShowXMLContentInMessage();
-    //     var
-    //         XmlDocText: Text;
-    //     begin
-    //         XmlDoc.WriteTo(XmlDocText);
-    //         Message(XmlDocText);
-    //     end;
-
-
-
-
-
-    //     var
-    //         XMLDoc: XMLDocument;
-    //         RootNode: XmlNode;
     var
         RefTypeHelper: Codeunit RefTypeHelper;
 }

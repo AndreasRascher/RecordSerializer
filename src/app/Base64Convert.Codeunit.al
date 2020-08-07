@@ -211,9 +211,8 @@ codeunit 50201 Base64Convert
     local procedure GetBase64Char(Value: Integer): text;
     var
         chars: text;
-        i: Integer;
     begin
-        chars := Base64Chars;
+        chars := Base64Chars();
         exit(chars[Value + 1]);
     end;
 
@@ -224,7 +223,7 @@ codeunit 50201 Base64Convert
         if Value = '=' then
             exit(0);
 
-        chars := Base64Chars;
+        chars := Base64Chars();
         exit(StrPos(chars, Value) - 1);
     end;
 
